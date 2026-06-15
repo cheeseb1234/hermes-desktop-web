@@ -49,56 +49,137 @@
   if (typeof window.hermesDesktop === 'undefined' || window.hermesDesktop === null) {
     // ── Mobile / responsive CSS fixes ──────────────────────────
     ;(function () {
+      // Fix 100vh → 100dvh on ALL devices (prevents bottom cut-off on mobile)
       var style = document.createElement('style')
       style.textContent = [
-        // Fix 100vh → 100dvh on mobile (prevents bottom cut-off)
+        // Override h-screen/min-h-screen globally
+        '[class*="h-screen"], [class*="min-h-screen"], html, body {',
+        '  min-height: 100dvh !important;',
+        '  height: 100dvh !important;',
+        '  max-height: 100dvh !important;',
+        '}',
+        // Prevent scrolling at the root level
+        'html, body, #root {',
+        '  overflow: hidden !important;',
+        '}',
+        // Force main layout to fill viewport
+        '[class*="sidebar-wrapper"],',
+        '[class*="flex"][class*="h-screen"],',
+        '[class*="flex"][class*="min-h-screen"] {',
+        '  max-height: 100dvh !important;',
+        '  min-height: 0 !important;',
+        '}',
+        // Mobile-specific overrides
         '@media (max-width: 768px) {',
-        '  [class*="sidebar-wrapper"],',
-        '  [class*="h-screen"],',
-        '  [class*="min-h-screen"],',
-        '  html, body {',
-        '    min-height: 100dvh !important;',
-        '    height: 100dvh !important;',
-        '    max-height: 100dvh !important;',
+        // Push sectionfooter to bottom
+        '  [class*="sectionfooter"] {',
+        '    margin-top: auto !important;',
+        '  }',
+        // Ensure content area scrolls, not the page
+        '  main, [role="main"], [class*="flex-1"] {',
+        '    overflow-y: auto !important;',
+        '    -webkit-overflow-scrolling: touch !important;',
+        '  }',
+        // Sidebar overlay on mobile
+        '  [data-slot="sidebar-wrapper"] {',
+        '    position: relative !important;',
         '    overflow: hidden !important;',
         '  }',
-        // Let content area scroll internally
-        '  [class*="flex-1"][class*="overflow"] {',
-        '    max-height: calc(100dvh - 2.5rem) !important;',
-        '  }',
-        // Session list shouldn't overflow
-        '  [class*="session"] {',
-        '    max-height: 50dvh !important;',
-        '  }',
-        // Tab bar / footer stays at bottom
-        '  [class*="sectionfooter"],',
-        '  [class*="sticky"][class*="bottom"] {',
-        '    position: sticky !important;',
+        // Right sidebar on mobile: overlay
+        '  [role="complementary"] {',
+        '    position: fixed !important;',
+        '    right: 0 !important;',
+        '    top: 0 !important;',
         '    bottom: 0 !important;',
+        '    z-index: 50 !important;',
+        '    background: var(--color-background, #111) !important;',
+        '    box-shadow: -4px 0 12px rgba(0,0,0,0.3) !important;',
+        '    transition: transform 0.2s ease !important;',
         '  }',
-        '}',
-        // Also ensure the root doesn't scroll past viewport
-        'html { overflow: hidden !important; }',
-        'body { overflow: hidden !important; }',
-        '#root { max-height: 100vh; max-height: 100dvh; overflow: hidden; }',
-        // Dynamic viewport height listener
-        '/* dvh-fix */'
+        // Left sidebar content on mobile: overlay
+        '  [data-slot="sidebar-wrapper"] > div:first-child {',
+        '    position: fixed !important;',
+        '    left: 0 !important;',
+        '    top: 0 !important;',
+        '    bottom: 0 !important;',
+        '    z-index: 50 !important;',
+        '    background: var(--color-background, #111) !important;',
+        '    box-shadow: 4px 0 12px rgba(0,0,0,0.3) !important;',
+        '    transition: transform 0.2s ease !important;',
+        '  }',
+        '}'
       ].join('\n')
       document.head.appendChild(style)
 
-      // Listen for viewport resize (mobile keyboard, toolbar show/hide)
-      var lastH = window.innerHeight
-      function fixHeight() {
-        var h = window.innerHeight
-        if (Math.abs(h - lastH) > 40) {
-          lastH = h
-          document.documentElement.style.setProperty('--vh', h + 'px')
-        }
+      // ── Dynamic viewport height fix ──────────────────────────
+      function fixViewport() {
+        var vh = window.innerHeight
+        document.documentElement.style.setProperty('--vh', vh + 'px')
+        // Force 100dvh on all h-screen elements by setting a CSS variable
+        document.documentElement.style.setProperty('--real-vh', vh + 'px')
       }
-      window.addEventListener('resize', fixHeight)
+      fixViewport()
+      window.addEventListener('resize', fixViewport)
       window.addEventListener('orientationchange', function () {
-        setTimeout(fixHeight, 300)
+        setTimeout(fixViewport, 300)
       })
+
+      // ── Sidebar toggle patch (works on mobile Firefox) ──────
+      function patchSidebarToggles() {
+        var wrapper = document.querySelector('[data-slot="sidebar-wrapper"]')
+        if (!wrapper) return
+
+        function handleToggle(label) {
+          if (label.indexOf('show sidebar') >= 0 || label.indexOf('hide sidebar') >= 0) {
+            var open = label.indexOf('show') >= 0
+            var sidebar = wrapper.querySelector('> div:first-child')
+            if (sidebar) {
+              sidebar.style.transform = open ? 'translateX(0)' : 'translateX(-100%)'
+              // Also tell internal React via data attribute
+              wrapper.setAttribute('data-sidebar-visible', String(open))
+            }
+          }
+          if (label.indexOf('show right') >= 0 || label.indexOf('hide right') >= 0) {
+            var open = label.indexOf('show') >= 0
+            var rightPanel = document.querySelector('[role="complementary"]')
+            if (rightPanel) {
+              rightPanel.style.transform = open ? 'translateX(0)' : 'translateX(100%)'
+              rightPanel.style.display = '' // let transform handle it
+            }
+          }
+        }
+
+        // Listen for both click and touchstart
+        document.addEventListener('click', function (e) {
+          var btn = e.target.closest('button')
+          if (btn) handleToggle((btn.getAttribute('aria-label') || '').toLowerCase())
+        }, true)
+
+        document.addEventListener('touchstart', function (e) {
+          var btn = e.target.closest('button')
+          if (btn) handleToggle((btn.getAttribute('aria-label') || '').toLowerCase())
+        }, true)
+
+        // Set initial transforms (sidebar hidden on mobile)
+        var sidebar = wrapper.querySelector('> div:first-child')
+        if (sidebar) sidebar.style.transform = 'translateX(-100%)'
+        var rightPanel = document.querySelector('[role="complementary"]')
+        if (rightPanel) rightPanel.style.transform = 'translateX(100%)'
+      }
+
+      // Try multiple times to catch the SPA render
+      patchSidebarToggles()
+      setTimeout(patchSidebarToggles, 500)
+      setTimeout(patchSidebarToggles, 1500)
+      setTimeout(patchSidebarToggles, 3000)
+
+      // Also observe the DOM for when sidebar-wrapper appears
+      var observer = new MutationObserver(function () {
+        patchSidebarToggles()
+        observer.disconnect()
+      })
+      observer.observe(document.body || document.documentElement, { childList: true, subtree: true })
+      setTimeout(function () { observer.disconnect() }, 5000) // safety timeout
     })()
 
     window.hermesDesktop = {
