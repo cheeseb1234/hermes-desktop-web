@@ -62,45 +62,19 @@
         '  max-height: 100dvh !important;',
         '}',
         // ── Mobile sidebar overlay ─────────────────────────────
-        // The app uses shadcn Sidebar with collapsible="none" — no Sheet is
-        // ever rendered. On desktop the sidebar is an inline flex div shown
-        // in the PaneShell track. On mobile the PaneShell collapses to 0 width
-        // and enters "hover-reveal" mode: the sidebar is wrapped in a container
-        // with overflow-hidden + translateX transform. This means position:fixed
-        // on the sidebar is RELATIVE TO that container (CSS spec), not the
-        // viewport — so the sidebar gets clipped by overflow-hidden.
+        // The app uses shadcn Sidebar with collapsible="none" — no Sheet.
+        // On desktop the sidebar is an inline flex div in the PaneShell track.
+        // On mobile (<768px) PaneShell enters "hover-reveal" mode: sidebar is
+        // wrapped in a container with overflow-hidden + translateX transform.
         //
-        // Fix: neutralize the hover-reveal container's transform on mobile,
-        // then repurpose the sidebar as a fixed overlay.
+        // Instead of fighting CSS containing-block issues with position:fixed,
+        // we hijack the PaneShell's built-in hover-reveal mechanism: adding
+        // data-forced="" to the pane root triggers the native slide-in CSS
+        // (group-data-[forced]/reveal:translate-x-0) — smooth, zero-conflict.
         '@media (max-width: 767px) {',
-        // Neutralize hover-reveal container transforms so position:fixed
-        // on the sidebar is relative to the viewport, not the container.
-        '  [data-pane-hover-reveal] > .absolute {',
-        '    transform: none !important;',
-        '    overflow: visible !important;',
-        '    pointer-events: auto !important;',
-        '  }',
-        '  [data-pane-hover-reveal] [class*="flex-col"] {',
-        '    overflow: visible !important;',
-        '  }',
-        // Left sidebar: inline → fixed overlay
-        '  [data-slot="sidebar"] {',
-        '    position: fixed !important;',
-        '    top: 0 !important;',
-        '    left: 0 !important;',
-        '    bottom: 0 !important;',
-        '    width: 280px !important;',
-        '    max-width: 80vw !important;',
-        '    z-index: 100 !important;',
-        '    transform: translateX(-100%);',
-        '    transition: transform 0.2s ease;',
-        '  }',
-        '  [data-slot="sidebar"].dfib-open {',
-        '    transform: translateX(0);',
-        '  }',
         // Backdrop overlay
         '  .dfib-backdrop {',
-        '    position: fixed; inset: 0; z-index: 99;',
+        '    position: fixed; inset: 0; z-index: 89;',
         '    background: rgba(0, 0, 0, 0.5);',
         '    opacity: 0; pointer-events: none;',
         '    transition: opacity 0.2s ease;',
@@ -108,22 +82,12 @@
         '  .dfib-backdrop.dfib-visible {',
         '    opacity: 1; pointer-events: auto;',
         '  }',
-        // Right sidebar (ASIDE): slide in from right
-        '  aside {',
-        '    position: fixed !important;',
-        '    top: 0 !important;',
-        '    right: 0 !important;',
-        '    bottom: 0 !important;',
-        '    width: 280px !important;',
-        '    max-width: 80vw !important;',
-        '    z-index: 100 !important;',
-        '    transform: translateX(100%);',
-        '    transition: transform 0.2s ease;',
+        // Ensure hover-reveal panels render above backdrop
+        '  [data-pane-hover-reveal] [data-forced] .z-30,',
+        '  [data-pane-hover-reveal][data-forced] > .absolute.overflow-hidden {',
+        '    z-index: 90 !important;',
         '  }',
-        '  aside.dfib-open {',
-        '    transform: translateX(0);',
-        '  }',
-        '}'
+        '}'.join('\n')
       ].join('\n')
       document.head.appendChild(vz)
 
@@ -138,17 +102,30 @@
     })()
     // ── Mobile sidebar interactivity ──────────────────────────
     // NOTE: This script runs from <head> before <body> exists. All DOM
-    // access (querySelector, appendChild) is deferred in init() or
-    // surrounded by a body-ready guard.
+    // access deferred in init().
     ;(function () {
       var MOBILE_BP = 768
       function isMobile() { return window.innerWidth < MOBILE_BP }
 
-      var backdrop, leftSidebar, rightAside, leftBtn, rightBtn
+      var backdrop
+
+      function getPane(id) {
+        return document.querySelector('[data-pane-id="' + id + '"]')
+      }
+
+      function isForced(pane) {
+        return pane && pane.hasAttribute('data-forced')
+      }
+
+      function setForced(pane, forced) {
+        if (!pane) return
+        if (forced) pane.setAttribute('data-forced', '')
+        else pane.removeAttribute('data-forced')
+      }
 
       function closeAll() {
-        if (leftSidebar) leftSidebar.classList.remove('dfib-open')
-        if (rightAside) rightAside.classList.remove('dfib-open')
+        setForced(getPane('chat-sidebar'), false)
+        setForced(getPane('file-browser'), false)
         if (backdrop) backdrop.classList.remove('dfib-visible')
       }
 
@@ -156,56 +133,52 @@
         e.stopPropagation()
         e.preventDefault()
         if (!isMobile()) return
-        if (rightAside) rightAside.classList.remove('dfib-open')
-        var wasOpen = leftSidebar && leftSidebar.classList.contains('dfib-open')
-        if (wasOpen) { closeAll() }
-        else { if (leftSidebar) leftSidebar.classList.add('dfib-open'); if (backdrop) backdrop.classList.add('dfib-visible') }
+        var pane = getPane('chat-sidebar')
+        if (isForced(pane)) { closeAll() }
+        else {
+          setForced(getPane('file-browser'), false)  // close other first
+          setForced(pane, true)
+          if (backdrop) backdrop.classList.add('dfib-visible')
+        }
       }
 
       function onRightToggle(e) {
         e.stopPropagation()
         e.preventDefault()
         if (!isMobile()) return
-        if (leftSidebar) leftSidebar.classList.remove('dfib-open')
-        var wasOpen = rightAside && rightAside.classList.contains('dfib-open')
-        if (wasOpen) { closeAll() }
-        else { if (rightAside) rightAside.classList.add('dfib-open'); if (backdrop) backdrop.classList.add('dfib-visible') }
+        var pane = getPane('file-browser')
+        if (isForced(pane)) { closeAll() }
+        else {
+          setForced(getPane('chat-sidebar'), false)  // close other first
+          setForced(pane, true)
+          if (backdrop) backdrop.classList.add('dfib-visible')
+        }
       }
 
       function init() {
-        // Now <body> is guaranteed to exist
         backdrop = document.createElement('div')
         backdrop.className = 'dfib-backdrop'
         backdrop.addEventListener('click', closeAll)
         document.body.appendChild(backdrop)
 
-        leftSidebar = document.querySelector('[data-slot="sidebar"]')
-        rightAside = document.querySelector('aside')
-
         function patchButtons() {
-          leftSidebar = document.querySelector('[data-slot="sidebar"]')
-          rightAside = document.querySelector('aside')
           var lb = document.querySelector('.codicon-layout-sidebar-left')
           var rb = document.querySelector('.codicon-layout-sidebar-right')
-          if (lb) { leftBtn = lb.closest('button'); if (leftBtn && !leftBtn._dfib) { leftBtn.addEventListener('click', onLeftToggle, true); leftBtn._dfib = true } }
-          if (rb) { rightBtn = rb.closest('button'); if (rightBtn && !rightBtn._dfib) { rightBtn.addEventListener('click', onRightToggle, true); rightBtn._dfib = true } }
+          if (lb) { var lbtn = lb.closest('button'); if (lbtn && !lbtn._dfib) { lbtn.addEventListener('click', onLeftToggle, true); lbtn._dfib = true } }
+          if (rb) { var rbtn = rb.closest('button'); if (rbtn && !rbtn._dfib) { rbtn.addEventListener('click', onRightToggle, true); rbtn._dfib = true } }
         }
 
         patchButtons()
-
-        // Watch for dynamically-inserted buttons (React re-renders)
         var obs = new MutationObserver(patchButtons)
         obs.observe(document.body, { childList: true, subtree: true })
       }
 
-      // Init (deferred until body exists - script runs from <head>)
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init)
       } else {
         init()
       }
 
-      // Clean up overlays when resizing to desktop width
       window.addEventListener('resize', function () {
         if (!isMobile()) closeAll()
       })
