@@ -18,8 +18,14 @@ SHIM_DST="apps/desktop/public/dFib-shim.js"
 if [ -f "$SHIM_SRC" ]; then
     cp "$SHIM_SRC" "$SHIM_DST"
     log "  dFib-shim.js restored from golden copy"
-    # Also copy to desktop-web-dist so it's served immediately
+    # Copy to desktop-web-dist so Vite rebuild includes it
     cp "$SHIM_SRC" "hermes_cli/desktop-web-dist/dFib-shim.js" 2>/dev/null || true
+    # Also copy to the actual serving location (HERMES_DESKTOP_WEB_DIST)
+    DESKTOP_WEB_DIR="${HERMES_DESKTOP_WEB_DIST:-$HERMES_HOME/desktop-web}"
+    if [ -d "$DESKTOP_WEB_DIR" ]; then
+        cp "$SHIM_SRC" "$DESKTOP_WEB_DIR/dFib-shim.js"
+        log "  dFib-shim.js synced to $DESKTOP_WEB_DIR"
+    fi
 else
     # Fallback: try in-repo copy (fresh install scenario)
     SHIM_FALLBACK="patch-scripts/dFib-shim.js"
