@@ -61,39 +61,55 @@
         '  min-height: 100dvh !important;',
         '  max-height: 100dvh !important;',
         '}',
-        // Mobile Sheet overlay (shadcn sidebar drawer)
-        '@media (max-width: 768px) {',
-        // Ensure sheet overlays properly on mobile
-        '  [data-sidebar][data-state="open"] {',
-        '    visibility: visible !important;',
-        '    opacity: 1 !important;',
-        '    pointer-events: auto !important;',
-        '  }',
-        // Sheet overlay backdrop
-        '  [class*="SheetOverlay"],',
-        '  [data-radix-dialog-overlay] {',
-        '    background: rgba(0, 0, 0, 0.5) !important;',
-        '    z-index: 60 !important;',
-        '    position: fixed !important;',
-        '    inset: 0 !important;',
-        '  }',
-        // Sheet content itself
-        '  [class*="SheetContent"],',
-        '  [data-radix-dialog-content] {',
-        '    z-index: 70 !important;',
+        // ── Mobile sidebar overlay ─────────────────────────────
+        // The app uses shadcn Sidebar with collapsible="none" — no Sheet is
+        // ever rendered. On desktop the sidebar is an inline flex div shown
+        // in the PaneShell track. On mobile the PaneShell collapses to 0 width
+        // (invisible). The titlebar toggle button toggles PaneShell open/closed
+        // which does nothing visible at mobile widths.
+        //
+        // Fix: override sidebar positioning to fixed overlay, hide it off-screen
+        // via translateX, then toggle a CSS class when tapped.
+        '@media (max-width: 767px) {',
+        // Left sidebar: inline → fixed overlay
+        '  [data-slot="sidebar"] {',
         '    position: fixed !important;',
         '    top: 0 !important;',
-        '    bottom: 0 !important;',
         '    left: 0 !important;',
-        '    width: min(80vw, 300px) !important;',
-        '    background: var(--color-background, #111) !important;',
-        '    box-shadow: 2px 0 12px rgba(0,0,0,0.3) !important;',
-        '    outline: none !important;',
+        '    bottom: 0 !important;',
+        '    width: 280px !important;',
+        '    max-width: 80vw !important;',
+        '    z-index: 100 !important;',
+        '    transform: translateX(-100%);',
+        '    transition: transform 0.2s ease;',
         '  }',
-        // Help right sidebar be visible when toggled
+        '  [data-slot="sidebar"].dfib-open {',
+        '    transform: translateX(0);',
+        '  }',
+        // Backdrop overlay
+        '  .dfib-backdrop {',
+        '    position: fixed; inset: 0; z-index: 99;',
+        '    background: rgba(0, 0, 0, 0.5);',
+        '    opacity: 0; pointer-events: none;',
+        '    transition: opacity 0.2s ease;',
+        '  }',
+        '  .dfib-backdrop.dfib-visible {',
+        '    opacity: 1; pointer-events: auto;',
+        '  }',
+        // Right sidebar (ASIDE): slide in from right
         '  aside {',
-        '    z-index: 40 !important;',
-        '    position: relative !important;',
+        '    position: fixed !important;',
+        '    top: 0 !important;',
+        '    right: 0 !important;',
+        '    bottom: 0 !important;',
+        '    width: 280px !important;',
+        '    max-width: 80vw !important;',
+        '    z-index: 100 !important;',
+        '    transform: translateX(100%);',
+        '    transition: transform 0.2s ease;',
+        '  }',
+        '  aside.dfib-open {',
+        '    transform: translateX(0);',
         '  }',
         '}'
       ].join('\n')
@@ -107,6 +123,84 @@
       fixV()
       window.addEventListener('resize', fixV)
       window.addEventListener('orientationchange', function () { setTimeout(fixV, 300) })
+    })()
+    // ── Mobile sidebar interactivity ──────────────────────────
+    ;(function () {
+      var MOBILE_BP = 768
+      function isMobile() { return window.innerWidth < MOBILE_BP }
+
+      // Create backdrop element
+      var backdrop = document.createElement('div')
+      backdrop.className = 'dfib-backdrop'
+      document.body.appendChild(backdrop)
+
+      var leftSidebar, rightAside, leftBtn, rightBtn
+
+      function closeAll() {
+        if (leftSidebar) leftSidebar.classList.remove('dfib-open')
+        if (rightAside) rightAside.classList.remove('dfib-open')
+        backdrop.classList.remove('dfib-visible')
+      }
+
+      function onLeftToggle(e) {
+        e.stopPropagation()
+        e.preventDefault()
+        if (!isMobile()) return
+        // Close right sidebar first
+        if (rightAside) rightAside.classList.remove('dfib-open')
+        // Toggle left
+        var wasOpen = leftSidebar && leftSidebar.classList.contains('dfib-open')
+        if (wasOpen) {
+          closeAll()
+        } else {
+          if (leftSidebar) leftSidebar.classList.add('dfib-open')
+          backdrop.classList.add('dfib-visible')
+        }
+      }
+
+      function onRightToggle(e) {
+        e.stopPropagation()
+        e.preventDefault()
+        if (!isMobile()) return
+        // Close left sidebar first
+        if (leftSidebar) leftSidebar.classList.remove('dfib-open')
+        // Toggle right
+        var wasOpen = rightAside && rightAside.classList.contains('dfib-open')
+        if (wasOpen) {
+          closeAll()
+        } else {
+          if (rightAside) rightAside.classList.add('dfib-open')
+          backdrop.classList.add('dfib-visible')
+        }
+      }
+
+      function patchButtons() {
+        leftSidebar = document.querySelector('[data-slot="sidebar"]')
+        rightAside = document.querySelector('aside')
+        var lb = document.querySelector('.codicon-layout-sidebar-left')
+        var rb = document.querySelector('.codicon-layout-sidebar-right')
+        if (lb) { leftBtn = lb.closest('button'); if (leftBtn && !leftBtn._dfib) { leftBtn.addEventListener('click', onLeftToggle, true); leftBtn._dfib = true } }
+        if (rb) { rightBtn = rb.closest('button'); if (rightBtn && !rightBtn._dfib) { rightBtn.addEventListener('click', onRightToggle, true); rightBtn._dfib = true } }
+      }
+
+      // Backdrop click closes
+      backdrop.addEventListener('click', closeAll)
+
+      // Init
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', patchButtons)
+      } else {
+        patchButtons()
+      }
+
+      // Watch for dynamically-inserted buttons (React re-renders)
+      var obs = new MutationObserver(patchButtons)
+      obs.observe(document.body, { childList: true, subtree: true })
+
+      // Clean up overlays when resizing to desktop width
+      window.addEventListener('resize', function () {
+        if (!isMobile()) closeAll()
+      })
     })()
 
     window.hermesDesktop = {
