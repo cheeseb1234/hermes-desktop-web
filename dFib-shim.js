@@ -65,12 +65,24 @@
         // The app uses shadcn Sidebar with collapsible="none" — no Sheet is
         // ever rendered. On desktop the sidebar is an inline flex div shown
         // in the PaneShell track. On mobile the PaneShell collapses to 0 width
-        // (invisible). The titlebar toggle button toggles PaneShell open/closed
-        // which does nothing visible at mobile widths.
+        // and enters "hover-reveal" mode: the sidebar is wrapped in a container
+        // with overflow-hidden + translateX transform. This means position:fixed
+        // on the sidebar is RELATIVE TO that container (CSS spec), not the
+        // viewport — so the sidebar gets clipped by overflow-hidden.
         //
-        // Fix: override sidebar positioning to fixed overlay, hide it off-screen
-        // via translateX, then toggle a CSS class when tapped.
+        // Fix: neutralize the hover-reveal container's transform on mobile,
+        // then repurpose the sidebar as a fixed overlay.
         '@media (max-width: 767px) {',
+        // Neutralize hover-reveal container transforms so position:fixed
+        // on the sidebar is relative to the viewport, not the container.
+        '  [data-pane-hover-reveal] > .absolute {',
+        '    transform: none !important;',
+        '    overflow: visible !important;',
+        '    pointer-events: auto !important;',
+        '  }',
+        '  [data-pane-hover-reveal] [class*="flex-col"] {',
+        '    overflow: visible !important;',
+        '  }',
         // Left sidebar: inline → fixed overlay
         '  [data-slot="sidebar"] {',
         '    position: fixed !important;',
@@ -125,77 +137,73 @@
       window.addEventListener('orientationchange', function () { setTimeout(fixV, 300) })
     })()
     // ── Mobile sidebar interactivity ──────────────────────────
+    // NOTE: This script runs from <head> before <body> exists. All DOM
+    // access (querySelector, appendChild) is deferred in init() or
+    // surrounded by a body-ready guard.
     ;(function () {
       var MOBILE_BP = 768
       function isMobile() { return window.innerWidth < MOBILE_BP }
 
-      // Create backdrop element
-      var backdrop = document.createElement('div')
-      backdrop.className = 'dfib-backdrop'
-      document.body.appendChild(backdrop)
-
-      var leftSidebar, rightAside, leftBtn, rightBtn
+      var backdrop, leftSidebar, rightAside, leftBtn, rightBtn
 
       function closeAll() {
         if (leftSidebar) leftSidebar.classList.remove('dfib-open')
         if (rightAside) rightAside.classList.remove('dfib-open')
-        backdrop.classList.remove('dfib-visible')
+        if (backdrop) backdrop.classList.remove('dfib-visible')
       }
 
       function onLeftToggle(e) {
         e.stopPropagation()
         e.preventDefault()
         if (!isMobile()) return
-        // Close right sidebar first
         if (rightAside) rightAside.classList.remove('dfib-open')
-        // Toggle left
         var wasOpen = leftSidebar && leftSidebar.classList.contains('dfib-open')
-        if (wasOpen) {
-          closeAll()
-        } else {
-          if (leftSidebar) leftSidebar.classList.add('dfib-open')
-          backdrop.classList.add('dfib-visible')
-        }
+        if (wasOpen) { closeAll() }
+        else { if (leftSidebar) leftSidebar.classList.add('dfib-open'); if (backdrop) backdrop.classList.add('dfib-visible') }
       }
 
       function onRightToggle(e) {
         e.stopPropagation()
         e.preventDefault()
         if (!isMobile()) return
-        // Close left sidebar first
         if (leftSidebar) leftSidebar.classList.remove('dfib-open')
-        // Toggle right
         var wasOpen = rightAside && rightAside.classList.contains('dfib-open')
-        if (wasOpen) {
-          closeAll()
-        } else {
-          if (rightAside) rightAside.classList.add('dfib-open')
-          backdrop.classList.add('dfib-visible')
-        }
+        if (wasOpen) { closeAll() }
+        else { if (rightAside) rightAside.classList.add('dfib-open'); if (backdrop) backdrop.classList.add('dfib-visible') }
       }
 
-      function patchButtons() {
+      function init() {
+        // Now <body> is guaranteed to exist
+        backdrop = document.createElement('div')
+        backdrop.className = 'dfib-backdrop'
+        backdrop.addEventListener('click', closeAll)
+        document.body.appendChild(backdrop)
+
         leftSidebar = document.querySelector('[data-slot="sidebar"]')
         rightAside = document.querySelector('aside')
-        var lb = document.querySelector('.codicon-layout-sidebar-left')
-        var rb = document.querySelector('.codicon-layout-sidebar-right')
-        if (lb) { leftBtn = lb.closest('button'); if (leftBtn && !leftBtn._dfib) { leftBtn.addEventListener('click', onLeftToggle, true); leftBtn._dfib = true } }
-        if (rb) { rightBtn = rb.closest('button'); if (rightBtn && !rightBtn._dfib) { rightBtn.addEventListener('click', onRightToggle, true); rightBtn._dfib = true } }
-      }
 
-      // Backdrop click closes
-      backdrop.addEventListener('click', closeAll)
+        function patchButtons() {
+          leftSidebar = document.querySelector('[data-slot="sidebar"]')
+          rightAside = document.querySelector('aside')
+          var lb = document.querySelector('.codicon-layout-sidebar-left')
+          var rb = document.querySelector('.codicon-layout-sidebar-right')
+          if (lb) { leftBtn = lb.closest('button'); if (leftBtn && !leftBtn._dfib) { leftBtn.addEventListener('click', onLeftToggle, true); leftBtn._dfib = true } }
+          if (rb) { rightBtn = rb.closest('button'); if (rightBtn && !rightBtn._dfib) { rightBtn.addEventListener('click', onRightToggle, true); rightBtn._dfib = true } }
+        }
 
-      // Init
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', patchButtons)
-      } else {
         patchButtons()
+
+        // Watch for dynamically-inserted buttons (React re-renders)
+        var obs = new MutationObserver(patchButtons)
+        obs.observe(document.body, { childList: true, subtree: true })
       }
 
-      // Watch for dynamically-inserted buttons (React re-renders)
-      var obs = new MutationObserver(patchButtons)
-      obs.observe(document.body, { childList: true, subtree: true })
+      // Init (deferred until body exists - script runs from <head>)
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init)
+      } else {
+        init()
+      }
 
       // Clean up overlays when resizing to desktop width
       window.addEventListener('resize', function () {
