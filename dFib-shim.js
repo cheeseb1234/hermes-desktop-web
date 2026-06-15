@@ -47,6 +47,60 @@
   }
 
   if (typeof window.hermesDesktop === 'undefined' || window.hermesDesktop === null) {
+    // ── Mobile / responsive CSS fixes ──────────────────────────
+    ;(function () {
+      var style = document.createElement('style')
+      style.textContent = [
+        // Fix 100vh → 100dvh on mobile (prevents bottom cut-off)
+        '@media (max-width: 768px) {',
+        '  [class*="sidebar-wrapper"],',
+        '  [class*="h-screen"],',
+        '  [class*="min-h-screen"],',
+        '  html, body {',
+        '    min-height: 100dvh !important;',
+        '    height: 100dvh !important;',
+        '    max-height: 100dvh !important;',
+        '    overflow: hidden !important;',
+        '  }',
+        // Let content area scroll internally
+        '  [class*="flex-1"][class*="overflow"] {',
+        '    max-height: calc(100dvh - 2.5rem) !important;',
+        '  }',
+        // Session list shouldn't overflow
+        '  [class*="session"] {',
+        '    max-height: 50dvh !important;',
+        '  }',
+        // Tab bar / footer stays at bottom
+        '  [class*="sectionfooter"],',
+        '  [class*="sticky"][class*="bottom"] {',
+        '    position: sticky !important;',
+        '    bottom: 0 !important;',
+        '  }',
+        '}',
+        // Also ensure the root doesn't scroll past viewport
+        'html { overflow: hidden !important; }',
+        'body { overflow: hidden !important; }',
+        '#root { max-height: 100vh; max-height: 100dvh; overflow: hidden; }',
+        // Dynamic viewport height listener
+        '/* dvh-fix */'
+      ].join('\n')
+      document.head.appendChild(style)
+
+      // Listen for viewport resize (mobile keyboard, toolbar show/hide)
+      var lastH = window.innerHeight
+      function fixHeight() {
+        var h = window.innerHeight
+        if (Math.abs(h - lastH) > 40) {
+          lastH = h
+          document.documentElement.style.setProperty('--vh', h + 'px')
+        }
+      }
+      window.addEventListener('resize', fixHeight)
+      window.addEventListener('orientationchange', function () {
+        setTimeout(fixHeight, 300)
+      })
+    })()
+
     window.hermesDesktop = {
       // ── Bootstrap ────────────────────────────────────────────
       getBootstrapState: function () {
