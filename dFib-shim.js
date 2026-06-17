@@ -12,7 +12,7 @@
 (function () {
   'use strict'
 
-  var STUB_PREFIX = '[dFib-shim]'
+  let STUB_PREFIX = '[dFib-shim]'
 
   function stubLog(method) {
     if (typeof console !== 'undefined') {
@@ -22,38 +22,33 @@
 
   /** Read the SPA's injected session token. */
   function getSessionToken() {
-    return typeof window.__HERMES_SESSION_TOKEN__ !== 'undefined'
-      ? window.__HERMES_SESSION_TOKEN__
+    return typeof globalThis.__HERMES_SESSION_TOKEN__ !== 'undefined'
+      ? globalThis.__HERMES_SESSION_TOKEN__
       : ''
   }
 
   /** Read the SPA's base path (empty or /prefix). */
   function getBasePath() {
-    return window.__HERMES_BASE_PATH__ || ''
+    return globalThis.__HERMES_BASE_PATH__ || ''
   }
 
   /** Build the gateway WebSocket URL with auth token. */
   function gatewayWsUrl() {
-    var base = getBasePath()
-    var token = getSessionToken()
-    var wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    var host = window.location.host
+    let base = getBasePath()
+    let token = getSessionToken()
+    let wsProto = globalThis.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    let host = globalThis.location.host
     return wsProto + '//' + host + base + '/api/ws?token=' + encodeURIComponent(token)
   }
 
-  function apiUrl(path) {
-    var base = getBasePath()
-    return base + path
-  }
-
-  if (typeof window.hermesDesktop === 'undefined' || window.hermesDesktop === null) {
+  if (typeof globalThis.hermesDesktop === 'undefined' || globalThis.hermesDesktop === null) {
     // ── Viewport height fix for mobile ────────────────────────
     // The SPA uses h-screen (100vh). On mobile the browser chrome
     // (address bar, toolbar) makes 100vh extend past the visible area.
     // We inject a style that overrides with 100dvh and listen for
     // resize/orientation changes to keep it accurate.
     ;(function () {
-      var vz = document.createElement('style')
+      let vz = document.createElement('style')
       vz.textContent = [
         // Fix 100vh → 100dvh for mobile browser chrome
         '[class*="h-screen"], [class*="min-h-screen"], html, body {',
@@ -92,22 +87,22 @@
       document.head.appendChild(vz)
 
       function fixV() {
-        var h = window.innerHeight
+        let h = globalThis.innerHeight
         document.documentElement.style.setProperty('--vh', h + 'px')
         document.documentElement.style.setProperty('--real-vh', h + 'px')
       }
       fixV()
-      window.addEventListener('resize', fixV)
-      window.addEventListener('orientationchange', function () { setTimeout(fixV, 300) })
+      globalThis.addEventListener('resize', fixV)
+      globalThis.addEventListener('orientationchange', function () { setTimeout(fixV, 300) })
     })()
     // ── Mobile sidebar interactivity ──────────────────────────
     // NOTE: This script runs from <head> before <body> exists. All DOM
     // access deferred in init().
     ;(function () {
-      var MOBILE_BP = 768
-      function isMobile() { return window.innerWidth < MOBILE_BP }
+      let MOBILE_BP = 768
+      function isMobile() { return globalThis.innerWidth < MOBILE_BP }
 
-      var backdrop
+      let backdrop
 
       function getPane(id) {
         return document.querySelector('[data-pane-id="' + id + '"]')
@@ -133,7 +128,7 @@
         e.stopPropagation()
         e.preventDefault()
         if (!isMobile()) return
-        var pane = getPane('chat-sidebar')
+        let pane = getPane('chat-sidebar')
         if (isForced(pane)) { closeAll() }
         else {
           setForced(getPane('file-browser'), false)  // close other first
@@ -146,7 +141,7 @@
         e.stopPropagation()
         e.preventDefault()
         if (!isMobile()) return
-        var pane = getPane('file-browser')
+        let pane = getPane('file-browser')
         if (isForced(pane)) { closeAll() }
         else {
           setForced(getPane('chat-sidebar'), false)  // close other first
@@ -162,14 +157,14 @@
         document.body.appendChild(backdrop)
 
         function patchButtons() {
-          var lb = document.querySelector('.codicon-layout-sidebar-left')
-          var rb = document.querySelector('.codicon-layout-sidebar-right')
-          if (lb) { var lbtn = lb.closest('button'); if (lbtn && !lbtn._dfib) { lbtn.addEventListener('click', onLeftToggle, true); lbtn._dfib = true } }
-          if (rb) { var rbtn = rb.closest('button'); if (rbtn && !rbtn._dfib) { rbtn.addEventListener('click', onRightToggle, true); rbtn._dfib = true } }
+          let lb = document.querySelector('.codicon-layout-sidebar-left')
+          let rb = document.querySelector('.codicon-layout-sidebar-right')
+          if (lb) { let lbtn = lb.closest('button'); if (lbtn && !lbtn._dfib) { lbtn.addEventListener('click', onLeftToggle, true); lbtn._dfib = true } }
+          if (rb) { let rbtn = rb.closest('button'); if (rbtn && !rbtn._dfib) { rbtn.addEventListener('click', onRightToggle, true); rbtn._dfib = true } }
         }
 
         patchButtons()
-        var obs = new MutationObserver(patchButtons)
+        let obs = new MutationObserver(patchButtons)
         obs.observe(document.body, { childList: true, subtree: true })
       }
 
@@ -179,12 +174,12 @@
         init()
       }
 
-      window.addEventListener('resize', function () {
+      globalThis.addEventListener('resize', function () {
         if (!isMobile()) closeAll()
       })
     })()
 
-    window.hermesDesktop = {
+    globalThis.hermesDesktop = {
       // ── Bootstrap ────────────────────────────────────────────
       getBootstrapState: function () {
         stubLog('getBootstrapState')
@@ -234,7 +229,7 @@
       getConnection: function (profile) {
         stubLog('getConnection', profile)
         return Promise.resolve({
-          baseUrl: window.location.origin,
+          baseUrl: globalThis.location.origin,
           isFullscreen: false,
           mode: 'local',
           authMode: 'token',
@@ -316,17 +311,16 @@
       // ── API client (wraps fetch for the dashboard's REST endpoints) ─
       api: function (opts) {
         if (!opts || typeof opts !== 'object') return Promise.reject(new Error('api() requires an options object'))
-        var path = opts.path || '/'
-        var method = (opts.method || 'GET').toUpperCase()
-        var body = opts.body
-        var profile = opts.profile
-        var baseUrl = getBasePath()
-        var fullUrl = baseUrl + path
-        var headers = { 'Accept': 'application/json' }
-        var fetchOpts = { method: method, headers: headers }
+        let path = opts.path || '/'
+        let method = (opts.method || 'GET').toUpperCase()
+        let body = opts.body
+        let baseUrl = getBasePath()
+        let fullUrl = baseUrl + path
+        let headers = { 'Accept': 'application/json' }
+        let fetchOpts = { method: method, headers: headers }
 
         // Inject session token as Bearer auth (what web_server.py expects)
-        var token = getSessionToken()
+        let token = getSessionToken()
         if (token) { headers['Authorization'] = 'Bearer ' + token }
 
         // Add body for non-GET
@@ -340,11 +334,11 @@
         }
 
         return fetch(fullUrl, fetchOpts).then(function (resp) {
-          var ct = (resp.headers.get('content-type') || '')
+          let ct = (resp.headers.get('content-type') || '')
           if (ct.indexOf('application/json') >= 0) {
             return resp.json().then(function (data) {
               if (!resp.ok) {
-                var err = new Error(data.detail || data.message || 'API error')
+                let err = new Error(data.detail || data.message || 'API error')
                 err.status = resp.status
                 throw err
               }
@@ -352,7 +346,7 @@
             })
           }
           if (!resp.ok) {
-            var err2 = new Error('API error: ' + resp.status)
+            let err2 = new Error('API error: ' + resp.status)
             err2.status = resp.status
             throw err2
           }
@@ -376,12 +370,12 @@
         return Promise.resolve({ localPath: null })
       },
 
-      watchPreviewFile: function (filePath, callback) {
+      watchPreviewFile: function (filePath, _callback) {
         stubLog('watchPreviewFile', filePath)
         return function () { /* noop unsubscribe */ }
       },
 
-      onPreviewFileChanged: function (callback) {
+      onPreviewFileChanged: function (_callback) {
         stubLog('onPreviewFileChanged')
         return function () { /* noop unsubscribe */ }
       },
@@ -404,7 +398,7 @@
       openExternal: function (url) {
         stubLog('openExternal', url)
         if (url && typeof url === 'string') {
-          try { window.open(url, '_blank') } catch (e) { /* noop */ }
+          try { globalThis.open(url, '_blank') } catch (_e) { /* noop */ }
         }
       },
 
@@ -416,7 +410,7 @@
       writeClipboard: function (text) {
         stubLog('writeClipboard', text)
         if (typeof navigator !== 'undefined' && navigator.clipboard) {
-          try { navigator.clipboard.writeText(text || '') } catch (e) { /* noop */ }
+          try { navigator.clipboard.writeText(text || '') } catch (_e) { /* noop */ }
         }
       },
 
@@ -555,7 +549,7 @@
         return Promise.resolve(null)
       },
 
-      saveImageBuffer: function (buffer) {
+      saveImageBuffer: function (_buffer) {
         stubLog('saveImageBuffer')
         return Promise.resolve(null)
       },
